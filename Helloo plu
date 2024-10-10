@@ -1,0 +1,153 @@
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+local Window = Fluent:CreateWindow({
+    Title = "Etherbyte Hub",
+    SubTitle = "made by fet's luck with love",
+    TabWidth = 100,
+    Size = UDim2.fromOffset(450, 320),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main" }),
+    Settings = Window:AddTab({ Title = "Settings" })
+}
+
+local enableProximityToggle = Tabs.Main:AddToggle("EnableProximity", {
+    Title = "Enable Auto Parry",
+    Default = false
+})
+
+local players = game:GetService("Players")
+local runService = game:GetService("RunService")
+local vim = game:GetService("VirtualInputManager")
+local ballFolder = workspace:WaitForChild("Balls")
+local keyPressDuration = 0.05
+local parryCooldown = 0.3
+local lastParryTime = 0
+local proximityThreshold = 10
+local speedThreshold = 120
+
+local function calculatePredictionTime(ball, player)
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local rootPart = player.Character.HumanoidRootPart
+        local relativePosition = ball.Position - rootPart.Position
+        local velocity = ball.Velocity + rootPart.Velocity
+        local distance = relativePosition.magnitude
+        local speed = velocity.magnitude
+        local bufferTime = 0.1
+        return math.max((distance - ball.Size.magnitude / 2) / (speed + 0.1) - bufferTime, 0), speed
+    end
+    return math.huge, 0
+end
+
+local function checkProximityToPlayer(ball, player)
+    local predictionTime, ballSpeed = calculatePredictionTime(ball, player)
+    local realBallAttribute = ball:GetAttribute("realBall")
+    local target = ball:GetAttribute("target")
+    local currentTime = tick()
+
+    if currentTime - lastParryTime < parryCooldown then return end
+
+    if ballSpeed >= speedThreshold and predictionTime <= 0.4 then
+        if realBallAttribute == true and target == player.Name then
+            vim:SendKeyEvent(true, Enum.KeyCode.F, false, nil)
+            wait(0.01)
+            vim:SendKeyEvent(false, Enum.KeyCode.F, false, nil)
+            lastParryTime = currentTime
+        end
+    elseif predictionTime <= 0.4 then
+        if realBallAttribute == true and target == player.Name then
+            vim:SendKeyEvent(true, Enum.KeyCode.F, false, nil)
+            wait(keyPressDuration)
+            vim:SendKeyEvent(false, Enum.KeyCode.F, false, nil)
+            lastParryTime = currentTime
+        end
+    end
+end
+
+local function checkBallsProximity()
+    local player = players.LocalPlayer
+    if player then
+        for _, ball in pairs(ballFolder:GetChildren()) do
+            if enableProximityToggle.Value then
+                checkProximityToPlayer(ball, player)
+            end
+        end
+    end
+end
+
+local function proximityLoop()
+    while enableProximityToggle.Value do
+        checkBallsProximity()
+        wait(0.03)
+    end
+end
+
+enableProximityToggle:OnChanged(function(value)
+    if value then
+        spawn(proximityLoop)
+    end
+end)
+
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+InterfaceManager:SetFolder("FluentScriptHub")
+SaveManager:SetFolder("FluentScriptHub/auto-parry")
+
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Settings)
+SaveManager:LoadAutoloadConfig()
+
+Fluent:Notify({
+    Title = "Etherbyte Hub",
+    Content = "made with love by fet's luck.",
+    Duration = 8
+})
+
+local isManualSpamActive = false
+local spamConnection
+local spamKeyPressDuration = 0.01
+
+local function manualSpam()
+    while isManualSpamActive do
+        vim:SendKeyEvent(true, Enum.KeyCode.F, false, nil)
+        wait(spamKeyPressDuration)
+        vim:SendKeyEvent(false, Enum.KeyCode.F, false, nil)
+        wait(0.01)
+    end
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+screenGui.ResetOnSpawn = false
+
+local manualSpamToggle = Instance.new("TextButton")
+manualSpamToggle.Parent = screenGui
+manualSpamToggle.Size = UDim2.new(0.15, 0, 0.1, 0)
+manualSpamToggle.Position = UDim2.new(0.05, 0, 0.05, 0)
+manualSpamToggle.Text = "Manual Spam: OFF"
+manualSpamToggle.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+manualSpamToggle.TextScaled = true
+manualSpamToggle.Draggable = true
+
+manualSpamToggle.MouseButton1Click:Connect(function()
+    isManualSpamActive = not isManualSpamActive
+    if isManualSpamActive then
+        manualSpamToggle.Text = "Manual Spam: ON"
+        manualSpamToggle.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
+        spamConnection = runService.Stepped:Connect(manualSpam)
+    else
+        manualSpamToggle.Text = "Manual Spam: OFF"
+        manualSpamToggle.BackgroundColor3 = Color3.fromRGB(100, 100, 255)
+        if spamConnection then
+            spamConnection:Disconnect()
+        end
+    end
+end)
